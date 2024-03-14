@@ -30,6 +30,8 @@ You can also run `node index.js dry`. This will log which posts will be created,
 
 Echo keeps track of the last item posted so on subsequent runs it will only post new posts.
 
+You can also run Echo with GitHub actions. [See Lewis' blog post for more info](https://lewisdale.dev/post/using-gitea-github-actions-for-triggering-echo/)
+
 ## Configuration
 
 There are two parts to configure: `sites` and `services`. `sites` is the RSS feeds you want to cross-post and `services` is the services you want to cross-post to.
@@ -79,7 +81,7 @@ Go to [the Echo website](https://echo.rknight.me) to use the config generator an
 
 ### Preset Transforms
 
-Echo has a few presets you can use instead of having to write the `getId` and `format` functions for every site. These can be seen in [`presets.js`](presets.js). For example, to use the Letterboxd or status.lol preset you can do the following:
+Echo has a few presets you can use instead of having to write the `getId` and `format` functions for every site. These can be seen in [`presets.js`](lib/presets.js). For example, to use the Letterboxd or status.lol preset you can do the following:
 
 ```js
 {
@@ -108,8 +110,8 @@ You can define the body of your post in `format` to make your posts look exactly
 ```js
 format: (data) => {
     const formatted = presets.default.format(data)
-    
-    // get the first link with Cheerio 
+
+    // get the first link with Cheerio
     // and append it to the content
     const $ = helpers.cheerioLoad(formatted.content)
     const firstLink = $('a:first').attr('href')
