@@ -52,6 +52,8 @@ function formatMessage(template, data) {
   };
 }
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function buildFeedFileName(config) {
   if (config.service_type === "webhook") {
     return `${config.feed_display_name}__${config.webhook_display_name}.txt`;
@@ -132,6 +134,7 @@ for (const feedConfig of allFeedConfigs) {
       );
     } else {
       console.log("config", feedConfig);
+      await delay(3000);
       await posters[feedConfig.service_type](feedConfig, formattedMessageObject, config);
     }
   }
