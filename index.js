@@ -91,15 +91,27 @@ for (const feedConfig of allFeedConfigs) {
   }
 
   if (!items[0].guid) {
-    console.log(`❌ No ID found for item in ${feedConfig.feed_display_name}, skipping`);
-    console.log(`👀 Does this item have a guid?`);
+    console.log(`❌ No ID found for item in ${feedConfig.feed_display_name}, skipping. 👀 Does this item have a guid?`);
     break;
   }
 
   const existingIds = JSON.parse(fs.readFileSync(`${echoPath}data/${feedFile}`, "utf8"));
 
-  if (!existingIds || existingIds.length === 0) {
-    INIT_MODE = true;
+  if (existingIds.length > 0) {
+    items = items.filter((item) => {
+      return !existingIds.includes(item.guid);
+    });
+  }
+
+  //now filter out the items before the feed was created that weren't filtered above
+
+  let newExistingItemsToAdd = false;
+  const feedConfigCreatedDate = new Date(feedConfig.created_at);
+  for (const item of items) {
+    if (new Date(item.isoDate) < feedConfigCreatedDate) {
+      existingIds.push(item.guid);
+      newExistingItemsToAdd = true;
+    }
   }
 
   if (existingIds.length > 0) {
@@ -108,14 +120,19 @@ for (const feedConfig of allFeedConfigs) {
     });
   }
 
+  const newIds = items.map((i) => i.guid);
+
+  if (newExistingItemsToAdd && !DRY_MODE) {
+    fs.writeFileSync(`${echoPath}data/${feedFile}`, JSON.stringify([...newIds, ...existingIds], "", 2));
+  }
+
   if (!items.length && !INIT_MODE) {
     console.log(`❌ No new items found for ${feedConfig.feed_display_name}`);
     continue;
   }
 
-  const newIds = items.map((i) => i.guid);
-
   if (!DRY_MODE) {
+    console.log("writing", [...newIds, ...existingIds]);
     fs.writeFileSync(`${echoPath}data/${feedFile}`, JSON.stringify([...newIds, ...existingIds], "", 2));
   }
 
@@ -134,7 +151,7 @@ for (const feedConfig of allFeedConfigs) {
       );
     } else {
       console.log("config", feedConfig);
-      await delay(3000);
+      await delay(2000);
       await posters[feedConfig.service_type](feedConfig, formattedMessageObject, config);
     }
   }
