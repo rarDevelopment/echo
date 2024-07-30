@@ -1,116 +1,137 @@
-import fs from 'fs'
-import RSSParser from 'rss-parser'
-import posters from './lib/posters/index.js'
+import fs from "fs";
+import RSSParser from "rss-parser";
+import posters from "./lib/posters/index.js";
 
-const echoPath = process.argv[1].replace('index.js', '')
+const echoPath = process.argv[1].replace("index.js", "");
 
-import config from './config.js'
+import config from "./config.js";
 
-const args = process.argv.slice(2)
-const INIT_MODE = args.includes('init')
-const DRY_MODE = args.includes('dry')
+const url = "https://rardk64.com/rss/feed-configs/json/";
 
-if (DRY_MODE && INIT_MODE)
-{
-    console.log('🚨 You cannot run Echo with init mode AND dry mode enabled at the same time')
-    process.exit()
+const allFeedConfigsResponse = await fetch(url);
+const allFeedConfigs = await allFeedConfigsResponse.json();
+
+// console.log(allFeedConfigs);
+
+const args = process.argv.slice(2);
+let INIT_MODE = args.includes("init");
+const DRY_MODE = args.includes("dry");
+
+if (DRY_MODE && INIT_MODE) {
+  console.log("🚨 You cannot run Echo with init mode AND dry mode enabled at the same time");
+  process.exit();
 }
 
-if (DRY_MODE) console.log('🌵 Running in dry mode, no posts will be created')
+if (DRY_MODE) {
+  console.log("🌵 Running in dry mode, no posts will be created");
+}
 
-async function getFeedItems(feed, isJson, customFields)
-{
-    if (isJson)
-    {
-        const res = await fetch(feed)
-        const feedData = await res.json()
-        return feedData.items
-    }
+async function getFeedItems(feed, isJson, customFields) {
+  if (isJson) {
+    const res = await fetch(feed);
+    const feedData = await res.json();
+    return feedData.items;
+  }
 
-    const data = await (new RSSParser({
-        customFields: {
-            item: customFields || [],
-        }
-    })).parseURL(feed)
-    return data.items || []
+  const data = await new RSSParser({
+    customFields: {
+      item: customFields || [],
+    },
+  }).parseURL(feed);
+  return data.items || [];
+}
+
+function formatMessage(template, data) {
+  const content = template
+    .replace(/{{\s*title\s*}}/g, data.title)
+    .replace(/{{\s*link\s*}}/g, data.link)
+    .replace(/{{\s*content\s*}}/g, data.content);
+  return {
+    content,
+    date: new Date(data.isoDate).toISOString(),
+  };
+}
+
+function buildFeedFileName(config) {
+  if (config.service_type === "webhook") {
+    return `${config.feed_display_name}__${config.webhook_display_name}.txt`;
+  } else {
+    return `${config.feed_display_name}__${config.username}_${config.service_type}.txt`;
+  }
 }
 
 if (!fs.existsSync(`${echoPath}data`)) {
-    fs.mkdirSync(`${echoPath}data`)
-    console.log('📁 Data folder created!')
+  fs.mkdirSync(`${echoPath}data`);
+  console.log("📁 Data folder created!");
 }
 
-for (const site of config.sites)
-{
-    const siteFile = `${site.name}.txt`
-    if (!fs.existsSync(`${echoPath}data/${siteFile}`)) {
-        await fs.writeFile(`${echoPath}data/${siteFile}`, JSON.stringify([], '', 2), { flag: "wx" }, (err) => {
-            if (err) throw err;
-            console.log(`✅ ${site.name} data file created!`)
-        })
+for (const feedConfig of allFeedConfigs) {
+  const feedFile = buildFeedFileName(feedConfig);
+
+  if (!fs.existsSync(`${echoPath}data/${feedFile}`)) {
+    if (!DRY_MODE) {
+      INIT_MODE = true; // TODO: need to refactor how feeds are tracked so we don't have to do this
     }
+    await fs.writeFile(`${echoPath}data/${feedFile}`, JSON.stringify([], "", 2), { flag: "wx" }, (err) => {
+      if (err) {
+        throw err;
+      }
+      console.log(`✅ ${feedConfig.feed_display_name} data file created!`);
+    });
+  }
 
-    console.log(`⚙️ Fetching for ${site.name}`)
-    let items = await getFeedItems(site.feed, site.json, site.customFields)
+  console.log(`⚙️ Fetching for ${feedConfig.feed_display_name}`);
+  let items = await getFeedItems(feedConfig.feed_url, false, null); // NOTE: have to change that hard-coded false if I want to use json feeds
 
-    if (items.length === 0)
-    {
-        console.log(`0️⃣ No items found for ${site.name}`)
-        continue;
+  if (items.length === 0) {
+    console.log(`0️⃣ No items found for ${feedConfig.feed_display_name}`);
+    continue;
+  }
+
+  if (!items[0].guid) {
+    console.log(`❌ No ID found for item in ${feedConfig.feed_display_name}, skipping`);
+    console.log(`👀 Does this item have a guid?`);
+    break;
+  }
+
+  const existingIds = JSON.parse(fs.readFileSync(`${echoPath}data/${feedFile}`, "utf8"));
+
+  if (existingIds.length > 0) {
+    items = items.filter((item) => {
+      return !existingIds.includes(item.guid);
+    });
+  }
+
+  if (!items.length && !INIT_MODE) {
+    console.log(`❌ No new items found for ${feedConfig.feed_display_name}`);
+    continue;
+  }
+
+  const newIds = items.map((i) => i.guid);
+
+  if (!DRY_MODE) {
+    fs.writeFileSync(`${echoPath}data/${feedFile}`, JSON.stringify([...newIds, ...existingIds], "", 2));
+  }
+
+  if (INIT_MODE) {
+    console.log(`⚙️ Echo initialised for ${feedConfig.feed_display_name}!`);
+    continue;
+  }
+  INIT_MODE = args.includes("init"); // TODO: remove this if I refactor how feeds are tracked
+
+  for (const item of items) {
+    const formattedMessageObject = formatMessage(feedConfig.message_template, item);
+    console.log("formatted", formattedMessageObject);
+    if (DRY_MODE) {
+      console.log(
+        `✅ Will create ${feedConfig.feed_display_name} post for ${formattedMessageObject.date}\n\n${formattedMessageObject.content}`
+      );
+    } else {
+      console.log("config", feedConfig);
+      await posters[feedConfig.service_type](feedConfig, formattedMessageObject, config);
     }
-
-    if (!site.transform.getId(items[0]))
-    {
-        console.log(`❌ No ID found for item in ${site.name}, skipping`)
-        console.log(`👀 To fix this, check the transform.getId function for this site. It's likely you're expecting id but the feed item uses guid instead`)
-        break;
-    }
-
-    if (site.transform.filter)
-    {
-        items = site.transform.filter(items)
-    }
-    const existingIds = JSON.parse(fs.readFileSync(`${echoPath}data/${siteFile}`, 'utf8'))
-
-    if (existingIds.length > 0) {
-        items = items.filter(item => {
-            return !existingIds.includes(site.transform.getId(item))
-        })
-    }
-
-    if (!items.length && !INIT_MODE)
-    {
-        console.log(`❎ No new items found for ${site.name}`)
-        continue
-    }
-
-    const newIds = items.map(i => site.transform.getId(i))
-
-    if (!DRY_MODE)
-    {
-        fs.writeFileSync(`${echoPath}data/${siteFile}`, JSON.stringify([...newIds, ...existingIds], '', 2));
-    }
-
-    if (INIT_MODE)
-    {
-        console.log(`⚙️ Echo initialised for ${site.name}!`)
-        continue
-    }
-
-    for (const item of items)
-    {
-        const formatted = site.transform.format(item)
-
-        if (DRY_MODE)
-        {
-            console.log(`✅ Will create ${site.name} post for ${formatted.date}\n\n${formatted.content}`)
-        } else {
-            for (const service of site.services)
-            {
-                await posters[service](config.services[service], formatted, site)
-            }
-        }
-    }
+  }
+  console.log(`✅ ${items.length} items found for ${feedConfig.feed_display_name}`);
 }
 
-process.exit()
+process.exit();
