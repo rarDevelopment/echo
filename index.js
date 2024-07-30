@@ -96,6 +96,10 @@ for (const feedConfig of allFeedConfigs) {
 
   const existingIds = JSON.parse(fs.readFileSync(`${echoPath}data/${feedFile}`, "utf8"));
 
+  if (!existingIds || existingIds.length === 0) {
+    INIT_MODE = true;
+  }
+
   if (existingIds.length > 0) {
     items = items.filter((item) => {
       return !existingIds.includes(item.guid);
