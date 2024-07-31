@@ -68,7 +68,7 @@ for (const feedConfig of allFeedConfigs) {
     //if we find a manual post with the same guid and config_id, we don't want that in existingIds because we want to post it
     const needToPost = manualPosts.find((p) => {
       //console.log("the manual post is ", p, "and we are comparing it to id", id, "and config id", feedConfig.config_id);
-      return p.feed_item_guid === id && p.config_id === feedConfig.config_id;
+      return p.feed_item_guid === id && p.config_id === feedConfig.config_id && p.webhook_id === feedConfig.webhook_id;
     });
     return !needToPost; //if we want to post it, don't include it in existingIds
   });
@@ -195,6 +195,7 @@ async function markManualPostAsProcessed(guid, configId, webhookId) {
   })
     .then((r) => r.json())
     .then((data) => {
+      4;
       console.log(`✅ Marked manual post ${guid} as processed`);
       return data;
     })
