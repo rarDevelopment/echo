@@ -6,12 +6,17 @@ import config from "./config.js";
 const echoPath = process.argv[1].replace("index.js", "");
 const dataFilePath = `${echoPath}data`;
 
-const cachedFeedItems = {};
+let cachedFeedItems = {};
 
 const feedConfigsJsonUrl = "https://rardk64.com/rss/feed-configs/json/";
+const manualPostsJsonUrl = "https://rardk64.com/rss/feed-manual-posts/json/";
+const updateManualPostUrl = "https://rardk64.com/panel/feeds/mark-manual-post-processed.php";
 
 const allFeedConfigsResponse = await fetch(feedConfigsJsonUrl);
 const allFeedConfigs = await allFeedConfigsResponse.json();
+
+const manualPostsResponse = await fetch(manualPostsJsonUrl);
+const manualPosts = await manualPostsResponse.json();
 
 const args = process.argv.slice(2);
 const DRY_MODE = args.includes("dry");
@@ -46,22 +51,29 @@ for (const feedConfig of allFeedConfigs) {
     break;
   }
 
-  const existingIds = JSON.parse(fs.readFileSync(feedFilePath, "utf8"));
+  let existingIds = JSON.parse(fs.readFileSync(feedFilePath, "utf8"));
 
-  if (existingIds.length > 0) {
-    items = items.filter((item) => {
-      return !existingIds.includes(item.guid);
-    });
-  }
-
-  //now filter out the items before the feed was created that weren't filtered above
-
+  //filter out the items from before the feed was created
   const feedConfigCreatedDate = new Date(feedConfig.created_at);
   for (const item of items) {
-    if (new Date(item.isoDate) < feedConfigCreatedDate) {
+    if (new Date(item.isoDate) < feedConfigCreatedDate && !existingIds.includes(item.guid)) {
       existingIds.push(item.guid);
     }
   }
+
+  //console.log("before", existingIds, manualPosts);
+
+  //filter out existing ids that will be manually posted
+  existingIds = existingIds.filter((id) => {
+    //if we find a manual post with the same guid and config_id, we don't want that in existingIds because we want to post it
+    const needToPost = manualPosts.find((p) => {
+      //console.log("the manual post is ", p, "and we are comparing it to id", id, "and config id", feedConfig.config_id);
+      return p.feed_item_guid === id && p.config_id === feedConfig.config_id;
+    });
+    return !needToPost; //if we want to post it, don't include it in existingIds
+  });
+
+  //console.log("existing ids", existingIds);
 
   if (existingIds.length > 0) {
     items = items.filter((item) => {
@@ -93,11 +105,17 @@ for (const feedConfig of allFeedConfigs) {
     } else {
       await delay(2000);
       await posters[feedConfig.service_type](feedConfig, formattedMessageObject, config);
+      if (manualPosts.find((p) => p.feed_item_guid === item.guid && p.config_id === feedConfig.config_id)) {
+        await markManualPostAsProcessed(item.guid, feedConfig.config_id, feedConfig.webhook_id);
+      } else {
+        console.log("didn't find that one for some reason", item.guid, feedConfig.config_id, manualPosts);
+      }
     }
   }
   console.log(`✅ ${items.length} items found for ${feedConfig.feed_display_name}`);
 }
 
+cachedFeedItems = [];
 process.exit();
 
 ///////// END OF SCRIPT /////////
@@ -119,7 +137,7 @@ function updateFileWithIds(ids, feedFilePath) {
 
 async function getFeedItems(feed, isJson, customFields) {
   if (cachedFeedItems[feed]) {
-    console.log("using cached items", cachedFeedItems);
+    console.log("💾 Using cached items", cachedFeedItems);
     return cachedFeedItems[feed];
   }
 
@@ -160,4 +178,28 @@ function buildFeedFileName(config) {
   } else {
     return `${config.feed_display_name}__${config.username}_${config.service_type}.txt`;
   }
+}
+
+async function markManualPostAsProcessed(guid, configId, webhookId) {
+  const postData = {
+    feed_item_guid: guid,
+    config_id: configId,
+    webhook_id: webhookId,
+  };
+  const res = await fetch(updateManualPostUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: JSON.stringify(postData),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      console.log(`✅ Marked manual post ${guid} as processed`);
+      return data;
+    })
+    .catch((error) => {
+      console.error(`❌ Error marking manual post ${guid}`, error);
+    });
+  return res;
 }
