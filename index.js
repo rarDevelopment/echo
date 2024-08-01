@@ -176,10 +176,12 @@ async function getFeedItems(feed, isJson, customFields) {
 }
 
 function formatMessage(template, data) {
-  const content = template
+  let content = template
     .replace(/{{\s*title\s*}}/g, data.title)
     .replace(/{{\s*link\s*}}/g, data.link)
-    .replace(/{{\s*content\s*}}/g, data.content);
+    .replace(/{{\s*content\s*}}/g, data.content)
+    .replace(/{{\s*content:plain\s*/g, data.content.replace(/<[^>]*>?/gm, ""));
+  content = htmlEntityDecode(content);
   return {
     content,
     date: new Date(data.isoDate).toISOString(),
@@ -217,4 +219,17 @@ async function markManualPostAsProcessed(guid, configId, webhookId) {
       console.error(`❌ Error marking manual post ${guid}`, error);
     });
   return res;
+}
+
+function htmlEntityDecode(encodedString) {
+  const entities = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&#39;": "'",
+    // Add more entities as needed
+  };
+
+  return encodedString.replace(/&[a-zA-Z0-9#]+;/g, (match) => entities[match] || match);
 }
