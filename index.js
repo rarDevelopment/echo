@@ -1,4 +1,4 @@
-import fs from "fs";
+import { promises as fs } from "fs";
 import RSSParser from "rss-parser";
 import posters from "./lib/posters/index.js";
 import config from "./config.js";
@@ -27,8 +27,8 @@ if (DRY_MODE) {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-if (!fs.existsSync(dataFilePath)) {
-  fs.mkdirSync(dataFilePath);
+if (!(await folderExists(dataFilePath))) {
+  await fs.mkdir(dataFilePath);
   console.log("📁 Data folder created!");
 }
 
@@ -36,7 +36,7 @@ for (const feedConfig of allFeedConfigs) {
   const feedFileName = buildFeedFileName(feedConfig);
   const feedFilePath = `${echoPath}data/${feedFileName}`;
 
-  createFileIfNotExists(feedFilePath, feedFileName);
+  await createFileIfNotExists(feedFilePath, feedFileName);
 
   console.log(`⚙️ Fetching for ${feedConfig.feed_display_name}`);
   let items = await getFeedItems(feedConfig.feed_url, false, null); // NOTE: have to change that hard-coded false if I want to use json feeds
@@ -51,29 +51,24 @@ for (const feedConfig of allFeedConfigs) {
     break;
   }
 
-  let existingIds = JSON.parse(fs.readFileSync(feedFilePath, "utf8"));
+  let existingIds = JSON.parse(await fs.readFile(feedFilePath, "utf8"));
 
   //filter out the items from before the feed was created
-  const feedConfigCreatedDate = new Date(feedConfig.created_at);
+  const connectionCreatedDate = new Date(feedConfig.connection_created_at);
   for (const item of items) {
-    if (new Date(item.isoDate) < feedConfigCreatedDate && !existingIds.includes(item.guid)) {
+    if (new Date(item.isoDate) < connectionCreatedDate && !existingIds.includes(item.guid)) {
       existingIds.push(item.guid);
     }
   }
-
-  //console.log("before", existingIds, manualPosts);
 
   //filter out existing ids that will be manually posted
   existingIds = existingIds.filter((id) => {
     //if we find a manual post with the same guid and config_id, we don't want that in existingIds because we want to post it
     const needToPost = manualPosts.find((p) => {
-      //console.log("the manual post is ", p, "and we are comparing it to id", id, "and config id", feedConfig.config_id);
       return p.feed_item_guid === id && p.config_id === feedConfig.config_id && p.webhook_id === feedConfig.webhook_id;
     });
     return !needToPost; //if we want to post it, don't include it in existingIds
   });
-
-  //console.log("existing ids", existingIds);
 
   if (existingIds.length > 0) {
     items = items.filter((item) => {
@@ -100,7 +95,7 @@ for (const feedConfig of allFeedConfigs) {
 
     if (DRY_MODE) {
       console.log(
-        `✅ Will create ${feedConfig.feed_display_name} post for ${formattedMessageObject.date}\n\n${formattedMessageObject.content}`
+        `✅ Will create ${feedConfig.feed_display_name} post for ${formattedMessageObject.date}` //\n\n${formattedMessageObject.content}`
       );
     } else {
       await delay(2000);
@@ -120,24 +115,41 @@ process.exit();
 
 ///////// END OF SCRIPT /////////
 
-async function createFileIfNotExists(feedFilePath, feedFileName) {
-  if (!fs.existsSync(feedFilePath)) {
-    await fs.writeFile(feedFilePath, JSON.stringify([], "", 2), { flag: "wx" }, (err) => {
-      if (err) {
-        throw err;
-      }
-      console.log(`✅ ${feedFileName} data file created!`);
-    });
+async function folderExists(folderPath) {
+  try {
+    await fs.access(folderPath);
+    return true;
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return false;
+    } else {
+      throw err;
+    }
   }
 }
 
-function updateFileWithIds(ids, feedFilePath) {
-  fs.writeFileSync(feedFilePath, JSON.stringify(ids, "", 2));
+async function createFileIfNotExists(feedFilePath, feedFileName) {
+  try {
+    if (
+      !(await fs
+        .access(feedFilePath)
+        .then(() => true)
+        .catch(() => false))
+    ) {
+      await fs.writeFile(feedFilePath, JSON.stringify([], "", 2), { flag: "wx" });
+      console.log(`✅ ${feedFileName} data file created!`);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function updateFileWithIds(ids, feedFilePath) {
+  await fs.writeFile(feedFilePath, JSON.stringify(ids, "", 2));
 }
 
 async function getFeedItems(feed, isJson, customFields) {
   if (cachedFeedItems[feed]) {
-    console.log("💾 Using cached items", cachedFeedItems);
     return cachedFeedItems[feed];
   }
 
