@@ -180,7 +180,7 @@ function formatMessage(template, data) {
     .replace(/{{\s*title\s*}}/g, data.title)
     .replace(/{{\s*link\s*}}/g, data.link)
     .replace(/{{\s*content\s*}}/g, data.content)
-    .replace(/{{\s*content:plain\s*/g, data.content.replace(/<[^>]*>?/gm, ""));
+    .replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, ""));
   content = htmlEntityDecode(content);
   return {
     content,
