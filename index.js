@@ -79,7 +79,7 @@ for (const feedConfig of allFeedConfigs) {
   const newIds = items.map((i) => i.guid);
 
   if (!items.length) {
-    console.log(`❌ No new items found for ${feedConfig.feed_display_name}`);
+    console.log(`❌ No new items found for ${feedFileName}`);
     //update the file anyway, since we want the file to be up to date with all existing ids
     await updateFileWithIds([...existingIds], feedFilePath);
     continue;
@@ -109,7 +109,7 @@ for (const feedConfig of allFeedConfigs) {
       }
     }
   }
-  console.log(`✅ ${items.length} items found for ${feedConfig.feed_display_name}`);
+  console.log(`✅ ${items.length} items found for ${feedFileName}`);
 }
 
 cachedFeedItems = [];
