@@ -81,13 +81,13 @@ for (const feedConfig of allFeedConfigs) {
   if (!items.length) {
     console.log(`❌ No new items found for ${feedConfig.feed_display_name}`);
     //update the file anyway, since we want the file to be up to date with all existing ids
-    updateFileWithIds([...existingIds], feedFilePath);
+    await updateFileWithIds([...existingIds], feedFilePath);
     continue;
   }
 
   //update file with new ids (as well as existing ids) if we're not in dry mode so that we don't post the same items again
   if (!DRY_MODE) {
-    updateFileWithIds([...newIds, ...existingIds], feedFilePath);
+    await updateFileWithIds([...newIds, ...existingIds], feedFilePath);
   }
 
   for (const item of items) {
@@ -100,10 +100,12 @@ for (const feedConfig of allFeedConfigs) {
     } else {
       await delay(2000);
       await posters[feedConfig.service_type](feedConfig, formattedMessageObject, config);
-      if (manualPosts.find((p) => p.feed_item_guid === item.guid && p.config_id === feedConfig.config_id)) {
-        await markManualPostAsProcessed(item.guid, feedConfig.config_id, feedConfig.webhook_id);
-      } else {
-        console.log("didn't find that one for some reason", item.guid, feedConfig.config_id, manualPosts);
+      if (manualPosts.length > 0) {
+        if (manualPosts.find((p) => p.feed_item_guid === item.guid && p.config_id === feedConfig.config_id)) {
+          await markManualPostAsProcessed(item.guid, feedConfig.config_id, feedConfig.webhook_id);
+        } else {
+          console.log("didn't find that one for some reason", item.guid, feedConfig.config_id, manualPosts);
+        }
       }
     }
   }
