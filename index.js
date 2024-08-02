@@ -176,14 +176,15 @@ async function getFeedItems(feed, isJson, customFields) {
 }
 
 function formatMessage(template, data) {
-  let content = template
+  let messageContent = template
     .replace(/{{\s*title\s*}}/g, data.title)
     .replace(/{{\s*link\s*}}/g, data.link)
     .replace(/{{\s*content\s*}}/g, data.content)
-    .replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, ""));
-  content = htmlEntityDecode(content);
+    .replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, ""))
+    .replace(/{{\s*date\s*}}/g, new Date(data.isoDate).toISOString());
+  messageContent = htmlEntityDecode(messageContent);
   return {
-    content,
+    content: messageContent,
     date: new Date(data.isoDate).toISOString(),
   };
 }
@@ -228,8 +229,9 @@ function htmlEntityDecode(encodedString) {
     "&gt;": ">",
     "&quot;": '"',
     "&#39;": "'",
-    // Add more entities as needed
   };
-
-  return encodedString.replace(/&[a-zA-Z0-9#]+;/g, (match) => entities[match] || match);
+  Object.entries(entities).forEach(([key, value]) => {
+    encodedString = encodedString.replace(new RegExp(key, "g"), value);
+  });
+  return encodedString;
 }
