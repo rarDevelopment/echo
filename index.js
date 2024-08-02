@@ -8,15 +8,20 @@ const dataFilePath = `${echoPath}data`;
 
 let cachedFeedItems = {};
 
-const feedConfigsJsonUrl = "https://rardk64.com/rss/feed-configs/json/";
-const manualPostsJsonUrl = "https://rardk64.com/rss/feed-manual-posts/json/";
-const updateManualPostUrl = "https://rardk64.com/panel/feeds/mark-manual-post-processed.php";
+const baseUrl = "https://rardk64.com/";
+const feedConfigsJsonUrl = `${baseUrl}rss/feed-configs/json/`;
+const manualPostsJsonUrl = `${baseUrl}rss/feed-manual-posts/json/`;
+const updateManualPostUrlWebhooks = `${baseUrl}panel/feeds/mark-manual-post-processed-webhooks.php`;
+const updateManualPostUrlSocials = `${baseUrl}panel/feeds/mark-manual-post-processed-socials.php`;
 
 const allFeedConfigsResponse = await fetch(feedConfigsJsonUrl);
 const allFeedConfigs = await allFeedConfigsResponse.json();
 
 const manualPostsResponse = await fetch(manualPostsJsonUrl);
-const manualPosts = await manualPostsResponse.json();
+const manualPostsResponseJson = await manualPostsResponse.json();
+
+const manualPostsWebhooks = manualPostsResponseJson["webhooks"];
+const manualPostsSocials = manualPostsResponseJson["socials"];
 
 const args = process.argv.slice(2);
 const DRY_MODE = args.includes("dry");
@@ -33,6 +38,9 @@ if (!(await folderExists(dataFilePath))) {
 }
 
 for (const feedConfig of allFeedConfigs) {
+  const isWebhookFeedConfig = feedConfig.webhook_id !== null;
+  const isSocialFeedConfig = feedConfig.service_type !== null;
+
   const feedFileName = buildFeedFileName(feedConfig);
   const feedFilePath = `${echoPath}data/${feedFileName}`;
 
@@ -61,13 +69,28 @@ for (const feedConfig of allFeedConfigs) {
     }
   }
 
+  //update the file now anyway, since we want the file to be up to date with all existing ids
+  await updateFileWithIds([...existingIds], feedFilePath);
+
+  let manualPostsToDo = [];
+  if (isWebhookFeedConfig) {
+    manualPostsToDo = manualPostsWebhooks.filter(
+      (p) => p.config_id === feedConfig.config_id && p.webhook_id === feedConfig.webhook_id
+    );
+  } else if (isSocialFeedConfig) {
+    manualPostsToDo = manualPostsSocials.filter(
+      (p) =>
+        p.config_id === feedConfig.config_id &&
+        p.service_type === feedConfig.service_type &&
+        p.user_id === feedConfig.user_id
+    );
+  }
+
   //filter out existing ids that will be manually posted
   existingIds = existingIds.filter((id) => {
-    //if we find a manual post with the same guid and config_id, we don't want that in existingIds because we want to post it
-    const needToPost = manualPosts.find((p) => {
-      return p.feed_item_guid === id && p.config_id === feedConfig.config_id && p.webhook_id === feedConfig.webhook_id;
-    });
-    return !needToPost; //if we want to post it, don't include it in existingIds
+    //if we find a manual post with the same guid, we don't want that in existingIds because we want to post it
+    const needToPost = manualPostsToDo.find((p) => p.feed_item_guid === id);
+    return !needToPost; //negated because we want to exclude the id
   });
 
   if (existingIds.length > 0) {
@@ -80,8 +103,6 @@ for (const feedConfig of allFeedConfigs) {
 
   if (!items.length) {
     console.log(`❌ No new items found for ${feedFileName}`);
-    //update the file anyway, since we want the file to be up to date with all existing ids
-    await updateFileWithIds([...existingIds], feedFilePath);
     continue;
   }
 
@@ -100,11 +121,11 @@ for (const feedConfig of allFeedConfigs) {
     } else {
       await delay(2000);
       await posters[feedConfig.service_type](feedConfig, formattedMessageObject, config);
-      if (manualPosts.length > 0) {
-        if (manualPosts.find((p) => p.feed_item_guid === item.guid && p.config_id === feedConfig.config_id)) {
-          await markManualPostAsProcessed(item.guid, feedConfig.config_id, feedConfig.webhook_id);
+      if (manualPostsToDo.length > 0) {
+        if (manualPostsToDo.find((p) => p.feed_item_guid === item.guid && p.config_id === feedConfig.config_id)) {
+          await markManualPostAsProcessed(item.guid, feedConfig, isWebhookFeedConfig, isSocialFeedConfig);
         } else {
-          console.log("didn't find that one for some reason", item.guid, feedConfig.config_id, manualPosts);
+          console.log("didn't find that one for some reason", item.guid, feedConfig.config_id, manualPostsWebhooks);
         }
       }
     }
@@ -179,9 +200,10 @@ function formatMessage(template, data) {
   let messageContent = template
     .replace(/{{\s*title\s*}}/g, data.title)
     .replace(/{{\s*link\s*}}/g, data.link)
-    .replace(/{{\s*content\s*}}/g, data.content)
-    .replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, ""))
+    .replace(/{{\s*content\s*}}/g, data.content.replace(/^\s+(?=\S)/gm, ""))
+    .replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, "").replace(/^\s+(?=\S)/gm, ""))
     .replace(/{{\s*date\s*}}/g, new Date(data.isoDate).toISOString());
+
   messageContent = htmlEntityDecode(messageContent);
   return {
     content: messageContent,
@@ -197,13 +219,28 @@ function buildFeedFileName(config) {
   }
 }
 
-async function markManualPostAsProcessed(guid, configId, webhookId) {
-  const postData = {
-    feed_item_guid: guid,
-    config_id: configId,
-    webhook_id: webhookId,
-  };
-  const res = await fetch(updateManualPostUrl, {
+async function markManualPostAsProcessed(guid, feedConfig, isWebhookFeedConfig, isSocialFeedConfig) {
+  let postData = {};
+  let urlToUse = "";
+  if (isWebhookFeedConfig) {
+    urlToUse = updateManualPostUrlWebhooks;
+    postData = {
+      feed_item_guid: guid,
+      config_id: feedConfig.config_id,
+      webhook_id: feedConfig.webhook_id,
+    };
+  } else if (isSocialFeedConfig) {
+    urlToUse = updateManualPostUrlSocials;
+    postData = {
+      feed_item_guid: guid,
+      config_id: feedConfig.config_id,
+      service_type: feedConfig.service_type,
+      user_id: feedConfig.user_id,
+    };
+  } else {
+    console.error("❌ Error: Could not identify feed type for manual post.");
+  }
+  const res = await fetch(urlToUse, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -213,11 +250,11 @@ async function markManualPostAsProcessed(guid, configId, webhookId) {
     .then((r) => r.json())
     .then((data) => {
       4;
-      console.log(`✅ Marked manual post ${guid} as processed`);
+      console.log(`✅ Marked manual post for ${guid} as processed`);
       return data;
     })
     .catch((error) => {
-      console.error(`❌ Error marking manual post ${guid}`, error);
+      console.error(`❌ Error marking manual post for ${guid}`, error);
     });
   return res;
 }
