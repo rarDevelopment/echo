@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import RSSParser from "rss-parser";
 import posters from "./lib/posters/index.js";
 import config from "./config.js";
+import contentBuilder from "./lib/contentBuilder.js";
 
 const echoPath = process.argv[1].replace("index.js", "");
 const dataFilePath = `${echoPath}data`;
@@ -25,6 +26,12 @@ const manualPostsSocials = manualPostsResponseJson["socials"];
 
 const args = process.argv.slice(2);
 const DRY_MODE = args.includes("dry");
+
+const characterLimits = {
+  mastodon: 479,
+  bluesky: 279,
+  webhook: 1979,
+};
 
 if (DRY_MODE) {
   console.log("🌵 Running in dry mode, no posts will be created");
@@ -112,11 +119,15 @@ for (const feedConfig of allFeedConfigs) {
   }
 
   for (const item of items) {
-    const formattedMessageObject = formatMessage(feedConfig.message_template, item);
+    const formattedMessageObject = formatMessage(
+      feedConfig.message_template,
+      item,
+      characterLimits[feedConfig.service_type]
+    );
 
     if (DRY_MODE) {
       console.log(
-        `✅ Will create ${feedConfig.feed_display_name} post for ${formattedMessageObject.date}` //\n\n${formattedMessageObject.content}`
+        `✅ Will create ${feedConfig.feed_display_name} post for ${formattedMessageObject.date}\n\n${formattedMessageObject.content}`
       );
     } else {
       await delay(2000);
@@ -196,13 +207,22 @@ async function getFeedItems(feed, isJson, customFields) {
   return items;
 }
 
-function formatMessage(template, data) {
-  let messageContent = template
-    .replace(/{{\s*title\s*}}/g, data.title)
-    .replace(/{{\s*link\s*}}/g, data.link)
-    .replace(/{{\s*content\s*}}/g, data.content.replace(/^\s+(?=\S)/gm, ""))
-    .replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, "").replace(/^\s+(?=\S)/gm, ""))
-    .replace(/{{\s*date\s*}}/g, new Date(data.isoDate).toISOString());
+function formatMessage(template, data, characterLimit) {
+  const keywordReplacements = {
+    title: (str) => (str = str.replace(/{{\s*title\s*}}/g, data.title)),
+    link: (str) => str.replace(/{{\s*link\s*}}/g, data.link),
+    content: (str) => str.replace(/{{\s*content\s*}}/g, data.content.replace(/^\s+(?=\S)/gm, "")),
+    "content:plain": (str) =>
+      str.replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, "").replace(/^\s+(?=\S)/gm, "")),
+    "content:goodreads": (str) =>
+      str.replace(/{{\s*content:goodreads\s*}}/g, contentBuilder.buildGoodreads(data, characterLimit)),
+    date: (str) => str.replace(/{{\s*date\s*}}/g, new Date(data.isoDate).toISOString()),
+  };
+
+  let messageContent = template;
+  for (const key in keywordReplacements) {
+    messageContent = keywordReplacements[key](messageContent);
+  }
 
   messageContent = htmlEntityDecode(messageContent);
   return {
