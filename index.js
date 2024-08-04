@@ -203,6 +203,11 @@ async function getFeedItems(feed, isJson, customFields) {
   if (cachedFeedItems[feed]) {
     cachedFeedItems[feed] = [];
   }
+
+  // if (feed.includes("posts")) {
+  //   console.log("feed", items);
+  // }
+
   cachedFeedItems[feed] = items;
   return items;
 }
@@ -225,9 +230,11 @@ function formatMessage(template, data, characterLimit) {
   }
 
   messageContent = htmlEntityDecode(messageContent);
+
   return {
     content: messageContent,
     date: new Date(data.isoDate).toISOString(),
+    image: data.enclosure ?? null,
   };
 }
 
