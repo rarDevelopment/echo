@@ -62,7 +62,7 @@ for (const feedConfig of allFeedConfigs) {
     continue;
   }
 
-  if (!items[0].guid) {
+  if (!getGuid(items[0])) {
     console.log(`❌ No ID found for item in ${feedConfig.feed_display_name}, skipping. 👀 Does this item have a guid?`);
     break;
   }
@@ -72,8 +72,8 @@ for (const feedConfig of allFeedConfigs) {
   //filter out the items from before the feed was created
   const connectionCreatedDate = new Date(feedConfig.connection_created_at);
   for (const item of items) {
-    if (new Date(item.isoDate) < connectionCreatedDate && !existingIds.includes(item.guid)) {
-      existingIds.push(item.guid);
+    if (new Date(item.isoDate) < connectionCreatedDate && !existingIds.includes(getGuid(item))) {
+      existingIds.push(getGuid(item));
     }
   }
 
@@ -103,11 +103,11 @@ for (const feedConfig of allFeedConfigs) {
 
   if (existingIds.length > 0) {
     items = items.filter((item) => {
-      return !existingIds.includes(item.guid);
+      return !existingIds.includes(getGuid(item));
     });
   }
 
-  const newIds = items.map((i) => i.guid);
+  const newIds = items.map((i) => getGuid(i));
 
   if (!items.length) {
     console.log(`❌ No new items found for ${feedFileName}`);
@@ -134,10 +134,10 @@ for (const feedConfig of allFeedConfigs) {
       await delay(2000);
       await posters[feedConfig.service_type](feedConfig, formattedMessageObject, config);
       if (manualPostsToDo.length > 0) {
-        if (manualPostsToDo.find((p) => p.feed_item_guid === item.guid && p.config_id === feedConfig.config_id)) {
-          await markManualPostAsProcessed(item.guid, feedConfig, isWebhookFeedConfig, isSocialFeedConfig);
+        if (manualPostsToDo.find((p) => p.feed_item_guid === getGuid(item) && p.config_id === feedConfig.config_id)) {
+          await markManualPostAsProcessed(getGuid(item), feedConfig, isWebhookFeedConfig, isSocialFeedConfig);
         } else {
-          console.log("didn't find that one for some reason", item.guid, feedConfig.config_id, manualPostsWebhooks);
+          console.log("didn't find that one for some reason", getGuid(item), feedConfig.config_id, manualPostsWebhooks);
         }
       }
     }
@@ -291,6 +291,10 @@ async function markManualPostAsProcessed(guid, feedConfig, isWebhookFeedConfig, 
       console.error(`❌ Error marking manual post for ${guid}`, error);
     });
   return res;
+}
+
+function getGuid(item) {
+  return item.guid ?? item.id ?? null;
 }
 
 function htmlEntityDecode(encodedString) {
