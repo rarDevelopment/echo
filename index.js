@@ -213,6 +213,7 @@ function formatMessage(template, data, characterLimit) {
   const keywordReplacements = {
     title: (str) => (str = str.replace(/{{\s*title\s*}}/g, data.title)),
     link: (str) => str.replace(/{{\s*link\s*}}/g, data.link),
+    linkWithoutEmbed: (str) => str.replace(/{{\s*link:noembed\s*}}/g, `<${data.link}>`),
     content: (str) => str.replace(/{{\s*content\s*}}/g, data.content.replace(/^\s+(?=\S)/gm, "")),
     "content:plain": (str) =>
       str.replace(/{{\s*content:plain\s*}}/g, data.content.replace(/<[^>]*>?/gm, "").replace(/^\s+(?=\S)/gm, "")),
