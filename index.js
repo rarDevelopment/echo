@@ -26,6 +26,7 @@ const manualPostsSocials = manualPostsResponseJson["socials"];
 
 const args = process.argv.slice(2);
 const DRY_MODE = args.includes("dry");
+const DEV_MODE = args.includes("dev");
 
 const characterLimits = {
   mastodon: 479,
@@ -125,7 +126,7 @@ for (const feedConfig of allFeedConfigs) {
       characterLimits[feedConfig.service_type]
     );
 
-    if (DRY_MODE) {
+    if (DRY_MODE || DEV_MODE) {
       console.log(
         `✅ Will create ${feedConfig.feed_display_name} post for ${formattedMessageObject.date}\n\n${formattedMessageObject.content}`
       );
@@ -203,10 +204,6 @@ async function getFeedItems(feed, isJson, customFields) {
   if (cachedFeedItems[feed]) {
     cachedFeedItems[feed] = [];
   }
-
-  // if (feed.includes("posts")) {
-  //   console.log("feed", items);
-  // }
 
   cachedFeedItems[feed] = items;
   return items;
