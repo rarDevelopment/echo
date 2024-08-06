@@ -219,6 +219,16 @@ function formatMessage(template, data, characterLimit) {
     "content:goodreads": (str) =>
       str.replace(/{{\s*content:goodreads\s*}}/g, contentBuilder.buildGoodreads(data, characterLimit)),
     date: (str) => str.replace(/{{\s*date\s*}}/g, new Date(data.isoDate).toISOString()),
+    discordUser: (str) => {
+      return str.replace(/{{\s*discord:user:(\d+)\s*}}/g, (_, userId) => {
+        return `<@${userId}>`;
+      });
+    },
+    discordRole: (str) => {
+      return str.replace(/{{\s*discord:role:(\d+)\s*}}/g, (_, roleId) => {
+        return `<@&${roleId}>`;
+      });
+    },
   };
 
   let messageContent = template;
